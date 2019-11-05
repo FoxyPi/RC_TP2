@@ -1,4 +1,5 @@
 *.class
 *.jpg
 *.mp4
-
+*.txt
+davidserver.jar
