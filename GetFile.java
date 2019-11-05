@@ -21,15 +21,17 @@ public class GetFile{
 		}
         String url = args[0];
 		String fileName = args[1];
-		int offset = 0;
-		String answerLine;
 		URL u = new URL(url);
+		int offset = 0;
+		Stats stats = new Stats();
 		// Assuming URL of the form http://server-name/path ....
 		int port = u.getPort() == -1 ? 80 : u.getPort();
 		String path = u.getPath() == "" ? "/" : u.getPath();
         FileOutputStream fout = new FileOutputStream(fileName);
 		
 		for(;;){
+			int bytesRead = offset;
+			String answerLine;
 			Socket sock = new Socket( u.getHost(), port );
 			OutputStream out = sock.getOutputStream();
 			InputStream in = sock.getInputStream();
@@ -40,11 +42,11 @@ public class GetFile{
 			System.out.println("\nSent:\n\n"+request);
 			System.out.println("Got:\n");
 			
+			//Se tiver o codigo 416, entao pedimos um bloco que nao existe
 			if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416"))
 				break;
-				
-			// first line is always present
-			System.out.println(answerLine);
+
+			//papa o resto do cabecalho
 			while ( !answerLine.equals("") ) {
 				System.out.println(answerLine);
 				answerLine = Http.readLine(in);
@@ -56,12 +58,12 @@ public class GetFile{
 				offset += n;
 				fout.write(buffer, 0, n);
 			}
+			stats.newRequest(offset - bytesRead);
 
 			sock.close();
-
-
 		}
-        fout.close();
+		fout.close();
+		stats.printReport();
 	}
 
 }
