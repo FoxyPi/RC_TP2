@@ -23,7 +23,7 @@ public class GetFile{
 
 	static class TCPThread implements Runnable{
 		private Socket sock;
-		private int startByte, bytesRead;
+		private int startByte, bytesRead, port;
 		private String path, host;
 		private RandomAccessFile fout;
 
@@ -31,8 +31,8 @@ public class GetFile{
 		TCPThread(String host, int port, String path, RandomAccessFile fout) throws Exception{
 			this.startByte = nextByte;
 			nextByte += BLOCK_SIZE;
-			this.sock = new Socket(host, port);
 			this.path =  path == "" ? "/" : path;
+			this.port = port;
 			this.host = host;
 			this.fout = fout;
 			this.fout.seek(startByte);
@@ -43,24 +43,27 @@ public class GetFile{
 			try{
 				for(;;){
 					String answerLine;
+					this.sock = new Socket(this.host, this.port);
 					OutputStream out = sock.getOutputStream();
 					InputStream in = sock.getInputStream();
 		
 					String request = String.format(REQUEST_FORMAT, this.path, this.host, this.startByte + this.bytesRead , this.startByte + BLOCK_SIZE);
 					out.write(request.getBytes());
 					
-					System.out.println("\nSent:\n\n"+request);
-					System.out.println("Got:\n");
+					//System.out.println("\nSent:\n\n"+request);
+					//System.out.println("Got:\n");
 					
 					//Se tiver o codigo 416, entao pedimos um bloco que nao existe
-					if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416")){
+					answerLine = Http.readLine(in);
+					System.out.println(answerLine + " asd");
+					if (Http.parseHttpReply(answerLine)[1].equals("416")){
 						done = true;
 						break;
 					}
 		
 					//papa o resto do cabecalho
 					while ( !answerLine.equals("") ) {
-						System.out.println(answerLine);
+						//System.out.println(answerLine);
 						answerLine = Http.readLine(in);
 					}
 					
@@ -70,18 +73,16 @@ public class GetFile{
 							this.bytesRead += n;
 							fout.write(buffer, 0, n);
 						}
-					if(this.bytesRead == BLOCK_SIZE){
+					if(this.bytesRead >= BLOCK_SIZE){
 						this.startByte = nextByte;
 						nextByte += BLOCK_SIZE;
 						this.bytesRead = 0;
 						this.fout.seek(this.startByte);
-					}else
-
+					}
 					stats.newRequest(bytesRead);
-					
+					this.sock.close();
 				}
 			
-				this.sock.close();
 			
 			}catch(IOException e){
 				System.out.println("IOException occured");	
