@@ -28,13 +28,12 @@ public class GetFile{
 
 	static class TCPThread implements Runnable{
 		private Socket sock;
-		private int startByte, bytesRead, port, id;
+		private int startByte, bytesRead, port;
 		private String path, host;
 		private RandomAccessFile fout;
 
 
-		TCPThread(int id, String host, int port, String path, String filename) throws Exception{
-			this.id = id;
+		TCPThread(String host, int port, String path, String filename) throws Exception{
 			this.startByte = nextByte;
 			nextByte += BLOCK_SIZE;
 			this.path =  path == "" ? "/" : path;
@@ -45,10 +44,33 @@ public class GetFile{
 			this.bytesRead = 0;
 		}
 
+		//papa o resto do cabecalho
+		private boolean processHeader(InputStream in) throws Exception{
+			String answerLine;
+			boolean error = false;
+
+			if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416"))
+				error = true;
+
+			while ( !answerLine.equals("") )
+				answerLine = Http.readLine(in);
+			
+			return error;
+		}
+
+		//escreve no ficheiro o payload
+		private void processWrite(InputStream in) throws Exception{
+			int n;
+			byte[] buffer = new byte[BUF_SIZE];
+				while( (n = in.read(buffer) ) > 0 ) {
+					this.bytesRead += n;
+					fout.write(buffer, 0, n);
+				}
+		}
+
 		public void run() {
 			try{
 				for(;;){
-					String answerLine;
 					int bytesMem = this.bytesRead;
 					this.sock = new Socket(this.host, this.port);
 					OutputStream out = sock.getOutputStream();
@@ -56,27 +78,11 @@ public class GetFile{
 					String request = String.format(REQUEST_FORMAT, this.path, this.host, this.startByte + this.bytesRead , this.startByte + BLOCK_SIZE - 1);
 					out.write(request.getBytes());
 					
-					System.out.println("\nSent:\n"+request);
-					System.out.println("Got:\n");
-					
 					//Se tiver o codigo 416, entao pedimos um bloco que nao existe
-					if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416")){
-						System.out.println("Done: " + this.id);
+					if(this.processHeader(in))
 						break;
-					}
-		
-					//papa o resto do cabecalho
-					while ( !answerLine.equals("") ) {
-						System.out.println(answerLine);
-						answerLine = Http.readLine(in);
-					}
 					
-					int n;
-					byte[] buffer = new byte[BUF_SIZE];
-						while( (n = in.read(buffer) ) > 0 ) {
-							this.bytesRead += n;
-							fout.write(buffer, 0, n);
-						}
+					this.processWrite(in);
 					
 					stats.newRequest(this.bytesRead - bytesMem);
 					
@@ -88,8 +94,8 @@ public class GetFile{
 					this.sock.close();
 				}
 				this.fout.close();
-			}catch(IOException e){
-				System.out.println("IOException occured");	
+			}catch(Exception e){
+				System.out.println("Uh oh, something went wrong...");	
 			}
 		}
 
@@ -107,15 +113,12 @@ public class GetFile{
 		// Assuming URL of the form http://server-name/path ....
 		for(int i = 0; i < args.length - 1; i++){
 			u = new URL(args[i]);
-			threads.add(new Thread(new TCPThread (i, u.getHost(), u.getPort(), u.getPath(), fileName)));
+			threads.add(new Thread(new TCPThread (u.getHost(), u.getPort(), u.getPath(), fileName)));
 			threads.get(threads.size() - 1).start();
 		}
 				
-		System.out.println("asd");
-		for(Thread thread : threads){
-			System.out.println("Waiting for " + thread.getName());
+		for(Thread thread : threads)
 			thread.join();
-		}
 
 		stats.printReport();
 	}
