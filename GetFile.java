@@ -19,7 +19,7 @@ public class GetFile{
 		"Host: %s\r\n" + 
 		"Range: bytes=%d-%d\r\n" + 
 		"User-Agent: X-RC2018\r\n\r\n";
-	private static final int BLOCK_SIZE = 500 * 1024;
+	private static int BLOCK_SIZE = 500 * 1024;
 	private static int nextByte = 0;//used by threads to ge a new block to work on
 	private static Stats stats;
 
@@ -111,16 +111,17 @@ public class GetFile{
 
 	public static void main(String[] args) throws Exception {
 		if ( args.length < 2) {
-			System.out.println("Usage: java HttpClientDemo url_to_access1 url_to_access2 ... url_to_accessN output_filename");
+			System.out.println("Usage: java GetFile block_size url_to_access1 url_to_access2 ... url_to_accessN output_filename");
 			System.exit(0);
 		}
+		BLOCK_SIZE = Integer.parseInt(args[0]);
 		String fileName = args[args.length - 1];
 		URL u;
 		List<Thread> threads = new LinkedList<>();
 		stats = new Stats();
 
 		//Throw the babies
-		for(int i = 0; i < args.length - 1; i++){
+		for(int i = 1; i < args.length - 1; i++){
 			u = new URL(args[i]);
 			threads.add(new Thread(new TCPThread (u.getHost(), u.getPort(), u.getPath(), fileName)));
 			threads.get(threads.size() - 1).start();
