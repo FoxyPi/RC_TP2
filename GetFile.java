@@ -1,4 +1,3 @@
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
@@ -7,25 +6,32 @@ import java.net.URL;
 import java.util.LinkedList;
 import java.util.List;
 
-/** A really simple HTTP Client
+/** Parallel Download HTTP Client
  * 
- * @author Eu
+ * @author David Pereira(52890) // Filipe Jose (53675)
  *
  */
 
 public class GetFile{
 	private static final int BUF_SIZE = 512;
-	private static final String REQUEST_FORMAT = "GET %s HTTP/1.0\r\n" + "Host: %s\r\n" + "Range: bytes=%d-%d\r\n" + "User-Agent: X-RC2018\r\n\r\n";
-	private static final int BLOCK_SIZE = 1048576; //1Mbyte
-	private static int nextByte = 0;
+	private static final String REQUEST_FORMAT = 
+		"GET %s HTTP/1.0\r\n" + 
+		"Host: %s\r\n" + 
+		"Range: bytes=%d-%d\r\n" + 
+		"User-Agent: X-RC2018\r\n\r\n";
+	private static final int BLOCK_SIZE = 500 * 1024;
+	private static int nextByte = 0;//used by threads to ge a new block to work on
 	private static Stats stats;
 
+	//Synched because otherwise concurrency would make it go bananas
 	private static synchronized int getNextByte(){
 		int synchByte = nextByte;
 		nextByte += BLOCK_SIZE;
 		return synchByte;
 	}
 
+	//Each thread takes cares of one "block". When it's done with the block
+	//it retreives a new assignment from getNextByte()
 	static class TCPThread implements Runnable{
 		private Socket sock;
 		private int startByte, bytesRead, port;
@@ -44,7 +50,7 @@ public class GetFile{
 			this.bytesRead = 0;
 		}
 
-		//papa o resto do cabecalho
+		// Returns true if its time to stop. Also consumes rest of header
 		private boolean processHeader(InputStream in) throws Exception{
 			String answerLine;
 			boolean error = false;
@@ -58,7 +64,8 @@ public class GetFile{
 			return error;
 		}
 
-		//escreve no ficheiro o payload
+		//writes the contents of in to the file.
+		//@pre: in has already had its header consumed
 		private void processWrite(InputStream in) throws Exception{
 			int n;
 			byte[] buffer = new byte[BUF_SIZE];
@@ -78,14 +85,15 @@ public class GetFile{
 					String request = String.format(REQUEST_FORMAT, this.path, this.host, this.startByte + this.bytesRead , this.startByte + BLOCK_SIZE - 1);
 					out.write(request.getBytes());
 					
-					//Se tiver o codigo 416, entao pedimos um bloco que nao existe
 					if(this.processHeader(in))
 						break;
 					
 					this.processWrite(in);
 					
+					//Did we do well?
 					stats.newRequest(this.bytesRead - bytesMem);
 					
+					//if we are finished with this block
 					if(this.bytesRead >= BLOCK_SIZE){
 						this.startByte = getNextByte();
 						this.bytesRead = 0;
@@ -110,13 +118,15 @@ public class GetFile{
 		URL u;
 		List<Thread> threads = new LinkedList<>();
 		stats = new Stats();
-		// Assuming URL of the form http://server-name/path ....
+
+		//Throw the babies
 		for(int i = 0; i < args.length - 1; i++){
 			u = new URL(args[i]);
 			threads.add(new Thread(new TCPThread (u.getHost(), u.getPort(), u.getPath(), fileName)));
 			threads.get(threads.size() - 1).start();
 		}
 				
+		//Wait for the babies
 		for(Thread thread : threads)
 			thread.join();
 
