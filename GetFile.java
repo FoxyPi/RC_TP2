@@ -12,6 +12,8 @@ import java.util.List;
  *
  */
 
+ //java GetFile 8192 http://localhost:8080/IFB.mp4 http://localhost:8081/IFB.mp4 http://localhost:8082/IFB.mp4 http://localhost:8083/IFB.mp4 copy > stat.txt
+
 public class GetFile{
 	private static final int BUF_SIZE = 512;
 	private static final String REQUEST_FORMAT = 
@@ -19,7 +21,7 @@ public class GetFile{
 		"Host: %s\r\n" + 
 		"Range: bytes=%d-%d\r\n" + 
 		"User-Agent: X-RC2018\r\n\r\n";
-	private static int BLOCK_SIZE = 500 * 1024;
+	private static int BLOCK_SIZE = 512 * 1024;
 	private static int nextByte = 0;//used by threads to ge a new block to work on
 	private static Stats stats;
 
@@ -28,6 +30,10 @@ public class GetFile{
 		int synchByte = nextByte;
 		nextByte += BLOCK_SIZE;
 		return synchByte;
+	}
+
+	private static synchronized void processStats(int bytes){
+		stats.newRequest(bytes);
 	}
 
 	//Each thread takes cares of one "block". When it's done with the block
@@ -40,8 +46,7 @@ public class GetFile{
 
 
 		TCPThread(String host, int port, String path, String filename) throws Exception{
-			this.startByte = nextByte;
-			nextByte += BLOCK_SIZE;
+			this.startByte = getNextByte();
 			this.path =  path == "" ? "/" : path;
 			this.port = port;
 			this.host = host;
@@ -87,11 +92,10 @@ public class GetFile{
 					
 					if(this.processHeader(in))
 						break;
-					
 					this.processWrite(in);
+					processStats(this.bytesRead - bytesMem);
 					
 					//Did we do well?
-					stats.newRequest(this.bytesRead - bytesMem);
 					
 					//if we are finished with this block
 					if(this.bytesRead >= BLOCK_SIZE){
@@ -101,6 +105,7 @@ public class GetFile{
 					}
 					this.sock.close();
 				}
+				this.sock.close();
 				this.fout.close();
 			}catch(Exception e){
 				System.out.println("Uh oh, something went wrong...");	

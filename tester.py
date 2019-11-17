@@ -1,15 +1,21 @@
 import os
 import math
 
-n_iter = 3
+n_iter = 5
 
 kbyte = 1024
 
-block_sizes = [20 * kbyte, 50 * kbyte, 100 * kbyte, 200 * kbyte, 500 * kbyte, 1024 * kbyte]
+def blockSizeGenerator():
+    blocksizelist = range(8*kbyte, 1024*kbyte,8*kbyte)
+    for i in blocksizelist:
+        yield i
+#block_sizes = [20 * kbyte, 50 * kbyte, 100 * kbyte, 200 * kbyte, 500 * kbyte, 1024 * kbyte]
 
 best_size_time = math.inf
 
-for size in block_sizes:
+bsgenerator = blockSizeGenerator()
+
+for size in bsgenerator:
     current_time = 0
     for x in range(n_iter):
         os.system("java GetFile " + str(size) + " http://localhost:8080/earth.jpg http://localhost:8081/earth.jpg http://localhost:8082/earth.jpg http://localhost:8083/earth.jpg copy > stat.txt")
