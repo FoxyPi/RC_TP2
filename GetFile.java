@@ -1,69 +1,141 @@
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.Socket;
 import java.net.URL;
+import java.util.LinkedList;
+import java.util.List;
 
-/** A really simple HTTP Client
+/** Parallel Download HTTP Client
  * 
- * @author Eu
+ * @author David Pereira(52890) // Filipe Jose (53675)
  *
  */
 
+ //java GetFile 8192 http://localhost:8080/IFB.mp4 http://localhost:8081/IFB.mp4 http://localhost:8082/IFB.mp4 http://localhost:8083/IFB.mp4 copy > stat.txt
+
 public class GetFile{
 	private static final int BUF_SIZE = 512;
-	private static final String REQUEST_FORMAT = "GET %s HTTP/1.0\r\n" + "Host: %s\r\n" + "Range: bytes=%d-%d\r\n" + "User-Agent: X-RC2018\r\n\r\n";
-	private static final int BLOCK_SIZE = 1048576; //1Mbyte
-	public static void main(String[] args) throws Exception {
-		if ( args.length != 2 ) {
-			System.out.println("Usage: java HttpClientDemo url_to_access output_filename");
-			System.exit(0);
-		}
-        String url = args[0];
-		String fileName = args[1];
-		URL u = new URL(url);
-		int offset = 0;
-		Stats stats = new Stats();
-		// Assuming URL of the form http://server-name/path ....
-		int port = u.getPort() == -1 ? 80 : u.getPort();
-		String path = u.getPath() == "" ? "/" : u.getPath();
-        FileOutputStream fout = new FileOutputStream(fileName);
-		
-		for(;;){
-			int bytesRead = offset;
-			String answerLine;
-			Socket sock = new Socket( u.getHost(), port );
-			OutputStream out = sock.getOutputStream();
-			InputStream in = sock.getInputStream();
+	private static final String REQUEST_FORMAT = 
+		"GET %s HTTP/1.0\r\n" + 
+		"Host: %s\r\n" + 
+		"Range: bytes=%d-%d\r\n" + 
+		"User-Agent: X-RC2018\r\n\r\n";
+	private static int BLOCK_SIZE = 512 * 1024;
+	private static int nextByte = 0;//used by threads to ge a new block to work on
+	private static Stats stats;
 
-			String request = String.format(REQUEST_FORMAT, path, u.getHost(),offset, offset + BLOCK_SIZE);
-			out.write(request.getBytes());
-			
-			System.out.println("\nSent:\n\n"+request);
-			System.out.println("Got:\n");
-			
-			//Se tiver o codigo 416, entao pedimos um bloco que nao existe
-			if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416"))
-				break;
-
-			//papa o resto do cabecalho
-			while ( !answerLine.equals("") ) {
-				System.out.println(answerLine);
-				answerLine = Http.readLine(in);
-			}
-			
-			int n;
-			byte[] buffer = new byte[BUF_SIZE];
-			while( (n = in.read(buffer) ) > 0 ) {
-				offset += n;
-				fout.write(buffer, 0, n);
-			}
-			stats.newRequest(offset - bytesRead);
-
-			sock.close();
-		}
-		fout.close();
-		stats.printReport();
+	//Synched because otherwise concurrency would make it go bananas
+	private static synchronized int getNextByte(){
+		int synchByte = nextByte;
+		nextByte += BLOCK_SIZE;
+		return synchByte;
 	}
 
+	private static synchronized void processStats(int bytes){
+		stats.newRequest(bytes);
+	}
+
+	//Each thread takes cares of one "block". When it's done with the block
+	//it retreives a new assignment from getNextByte()
+	static class TCPThread implements Runnable{
+		private Socket sock;
+		private int startByte, bytesRead, port;
+		private String path, host;
+		private RandomAccessFile fout;
+
+
+		TCPThread(String host, int port, String path, String filename) throws Exception{
+			this.startByte = getNextByte();
+			this.path =  path == "" ? "/" : path;
+			this.port = port;
+			this.host = host;
+			this.fout = new RandomAccessFile(filename, "rw");
+			this.fout.seek(startByte);
+			this.bytesRead = 0;
+		}
+
+		// Returns true if its time to stop. Also consumes rest of header
+		private boolean processHeader(InputStream in) throws Exception{
+			String answerLine;
+			boolean error = false;
+
+			if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416"))
+				error = true;
+
+			while ( !answerLine.equals("") )
+				answerLine = Http.readLine(in);
+			
+			return error;
+		}
+
+		//writes the contents of in to the file.
+		//@pre: in has already had its header consumed
+		private void processWrite(InputStream in) throws Exception{
+			int n;
+			byte[] buffer = new byte[BUF_SIZE];
+				while( (n = in.read(buffer) ) > 0 ) {
+					this.bytesRead += n;
+					fout.write(buffer, 0, n);
+				}
+		}
+
+		public void run() {
+			try{
+				for(;;){
+					int bytesMem = this.bytesRead;
+					this.sock = new Socket(this.host, this.port);
+					OutputStream out = sock.getOutputStream();
+					InputStream in = sock.getInputStream();
+					String request = String.format(REQUEST_FORMAT, this.path, this.host, this.startByte + this.bytesRead , this.startByte + BLOCK_SIZE - 1);
+					out.write(request.getBytes());
+					
+					if(this.processHeader(in))
+						break;
+					this.processWrite(in);
+					processStats(this.bytesRead - bytesMem);
+					
+					//Did we do well?
+					
+					//if we are finished with this block
+					if(this.bytesRead >= BLOCK_SIZE){
+						this.startByte = getNextByte();
+						this.bytesRead = 0;
+						this.fout.seek(this.startByte);
+					}
+					this.sock.close();
+				}
+				this.sock.close();
+				this.fout.close();
+			}catch(Exception e){
+				System.out.println("Uh oh, something went wrong...");	
+			}
+		}
+
+	}
+
+	public static void main(String[] args) throws Exception {
+		if ( args.length < 2) {
+			System.out.println("Usage: java GetFile block_size url_to_access1 url_to_access2 ... url_to_accessN output_filename");
+			System.exit(0);
+		}
+		BLOCK_SIZE = Integer.parseInt(args[0]);
+		String fileName = args[args.length - 1];
+		URL u;
+		List<Thread> threads = new LinkedList<>();
+		stats = new Stats();
+
+		//Throw the babies
+		for(int i = 1; i < args.length - 1; i++){
+			u = new URL(args[i]);
+			threads.add(new Thread(new TCPThread (u.getHost(), u.getPort(), u.getPath(), fileName)));
+			threads.get(threads.size() - 1).start();
+		}
+				
+		//Wait for the babies
+		for(Thread thread : threads)
+			thread.join();
+
+		stats.printReport();
+	}
 }

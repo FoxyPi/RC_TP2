@@ -3,3 +3,6 @@
 *.mp4
 *.txt
 davidserver.jar
+.vscode
+output
+copy
