@@ -60,7 +60,7 @@ public class GetFile{
 			String answerLine;
 			boolean error = false;
 
-			if (Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("416"))
+			if (!Http.parseHttpReply(answerLine = Http.readLine(in))[1].equals("206"))
 				error = true;
 
 			while ( !answerLine.equals("") )
@@ -92,17 +92,18 @@ public class GetFile{
 					
 					if(this.processHeader(in))
 						break;
-					this.processWrite(in);
+					
+						this.processWrite(in);
+
 					processStats(this.bytesRead - bytesMem);
-					
-					//Did we do well?
-					
+										
 					//if we are finished with this block
 					if(this.bytesRead >= BLOCK_SIZE){
 						this.startByte = getNextByte();
 						this.bytesRead = 0;
 						this.fout.seek(this.startByte);
 					}
+
 					this.sock.close();
 				}
 				this.sock.close();
@@ -121,14 +122,18 @@ public class GetFile{
 		}
 		BLOCK_SIZE = Integer.parseInt(args[0]);
 		String fileName = args[args.length - 1];
+		String path;
 		URL u;
+		int port;
 		List<Thread> threads = new LinkedList<>();
 		stats = new Stats();
 
 		//Throw the babies
 		for(int i = 1; i < args.length - 1; i++){
 			u = new URL(args[i]);
-			threads.add(new Thread(new TCPThread (u.getHost(), u.getPort(), u.getPath(), fileName)));
+			port = u.getPort() == -1 ? 80 : u.getPort();
+			path = u.getPath() == "" ? "/" : u.getPath();
+			threads.add(new Thread(new TCPThread (u.getHost() ,port ,path , fileName)));
 			threads.get(threads.size() - 1).start();
 		}
 				
