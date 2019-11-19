@@ -55,8 +55,4 @@ for size in block_sizes:
 
 print("Best block_size was " + str(best_size) + " with " + str(best_size_time) + "s as the average download time")
 for result in results:
-    print(str(result) + " : " + str(results[result]))
-      
-            
-            
-
+    print("{} : {}".format(str(result), str(results[result])))      
