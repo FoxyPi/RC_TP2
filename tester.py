@@ -2,7 +2,7 @@ import os
 import math
 import random
 
-n_iter = 3
+n_iter = 10
 
 kbyte = 1024
 
