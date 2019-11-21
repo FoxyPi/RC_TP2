@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Parallel Download HTTP Client
  * 
- * @author David Pereira(52890) // Filipe Jose (53675)
+ * @author David Pereira(52890) // Filipe Jose (53277)
  *
  */
 
@@ -19,7 +19,7 @@ public class GetFile{
 		"Host: %s\r\n" + 
 		"Range: bytes=%d-%d\r\n" + 
 		"User-Agent: X-RC2018\r\n\r\n";
-	private static int BLOCK_SIZE = 18 * 1024;//18Kbytes is the optimal size found by our python script
+	private static int BLOCK_SIZE = 8 * 1024;//8Kbytes is the optimal size found by our python script
 	private static int nextByte = 0;//used by threads to ge a new block to work on
 	private static Stats stats;
 

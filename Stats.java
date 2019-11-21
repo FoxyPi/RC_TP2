@@ -30,7 +30,6 @@ public class Stats {
 	public void printReport() {
 		// compute time spent receiving bytes
 		long milliSeconds = System.currentTimeMillis() - startTime;
-		System.out.println(milliSeconds);
 		double speed = totalBytes / (double)milliSeconds; // K bytes/s
 		
 		System.out.println("\nTransfer stats: -----------------------------------------");
