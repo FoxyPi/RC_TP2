@@ -12,8 +12,6 @@ import java.util.List;
  *
  */
 
- //java GetFile 8192 http://localhost:8080/IFB.mp4 http://localhost:8081/IFB.mp4 http://localhost:8082/IFB.mp4 http://localhost:8083/IFB.mp4 copy > stat.txt
-
 public class GetFile{
 	private static final int BUF_SIZE = 512;
 	private static final String REQUEST_FORMAT = 
@@ -21,7 +19,7 @@ public class GetFile{
 		"Host: %s\r\n" + 
 		"Range: bytes=%d-%d\r\n" + 
 		"User-Agent: X-RC2018\r\n\r\n";
-	private static int BLOCK_SIZE = 512 * 1024;
+	private static int BLOCK_SIZE = 18 * 1024;//18Kbytes is the optimal size found by our python script
 	private static int nextByte = 0;//used by threads to ge a new block to work on
 	private static Stats stats;
 
@@ -32,6 +30,7 @@ public class GetFile{
 		return synchByte;
 	}
 
+	//Synched because otherwise concurrency would make the stats go bananas
 	private static synchronized void processStats(int bytes){
 		stats.newRequest(bytes);
 	}
@@ -40,7 +39,10 @@ public class GetFile{
 	//it retreives a new assignment from getNextByte()
 	static class TCPThread implements Runnable{
 		private Socket sock;
-		private int startByte, bytesRead, port;
+		private int startByte;//Representes the starting byte of the current range
+		private int bytesRead;//Number of bytes read in the current range. 
+							  //Resets to 0 when acquiring a new range
+		private int port;
 		private String path, host;
 		private RandomAccessFile fout;
 
@@ -69,33 +71,40 @@ public class GetFile{
 			return error;
 		}
 
-		//writes the contents of in to the file.
-		//@pre: in has already had its header consumed
-		private void processWrite(InputStream in) throws Exception{
+		/**
+		 * Writes the reply's payload to the file
+		 * Returns the number of bytes received in the reply
+		 */
+		private int processWrite(InputStream in) throws Exception{
 			int n;
+			int startingBytes = this.bytesRead;
 			byte[] buffer = new byte[BUF_SIZE];
 				while( (n = in.read(buffer) ) > 0 ) {
 					this.bytesRead += n;
 					fout.write(buffer, 0, n);
 				}
+			
+			return this.bytesRead - startingBytes;
 		}
 
 		public void run() {
 			try{
 				for(;;){
-					int bytesMem = this.bytesRead;
+
+					//----------------SOCKET-------------------------
 					this.sock = new Socket(this.host, this.port);
 					OutputStream out = sock.getOutputStream();
 					InputStream in = sock.getInputStream();
+
+					//---------------Send Request--------------------
 					String request = String.format(REQUEST_FORMAT, this.path, this.host, this.startByte + this.bytesRead , this.startByte + BLOCK_SIZE - 1);
 					out.write(request.getBytes());
 					
+					//---------------Process Reply-------------------
 					if(this.processHeader(in))
 						break;
 					
-						this.processWrite(in);
-
-					processStats(this.bytesRead - bytesMem);
+					processStats(this.processWrite(in));
 										
 					//if we are finished with this block
 					if(this.bytesRead >= BLOCK_SIZE){
@@ -116,28 +125,27 @@ public class GetFile{
 	}
 
 	public static void main(String[] args) throws Exception {
-		if ( args.length < 2) {
-			System.out.println("Usage: java GetFile block_size url_to_access1 url_to_access2 ... url_to_accessN output_filename");
+		if ( args.length < 1) {
+			System.out.println("Usage: java GetFile url_to_access1 url_to_access2 ... url_to_accessN");
 			System.exit(0);
 		}
-		BLOCK_SIZE = Integer.parseInt(args[0]);
-		String fileName = args[args.length - 1];
+		String fileName = ("copy");
 		String path;
 		URL u;
 		int port;
 		List<Thread> threads = new LinkedList<>();
 		stats = new Stats();
 
-		//Throw the babies
-		for(int i = 1; i < args.length - 1; i++){
-			u = new URL(args[i]);
+		//Throw the workers
+		for(String arg : args) {
+			u = new URL(arg);
 			port = u.getPort() == -1 ? 80 : u.getPort();
 			path = u.getPath() == "" ? "/" : u.getPath();
 			threads.add(new Thread(new TCPThread (u.getHost() ,port ,path , fileName)));
 			threads.get(threads.size() - 1).start();
 		}
 				
-		//Wait for the babies
+		//Wait for the workers
 		for(Thread thread : threads)
 			thread.join();
 

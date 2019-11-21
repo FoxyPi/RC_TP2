@@ -30,6 +30,7 @@ public class Stats {
 	public void printReport() {
 		// compute time spent receiving bytes
 		long milliSeconds = System.currentTimeMillis() - startTime;
+		System.out.println(milliSeconds);
 		double speed = totalBytes / (double)milliSeconds; // K bytes/s
 		
 		System.out.println("\nTransfer stats: -----------------------------------------");
@@ -38,7 +39,7 @@ public class Stats {
 		System.out.printf( "End-to-end debit (Kbytes/s):\t%.3f\n", speed);
 		System.out.println("Number of requests:\t\t" + totalRequests);
 		System.out.println("Aver. reply length (bytes):\t"+totalBytes/totalRequests);
-		System.out.println("Aver. time per request (s):\t"+milliSeconds/totalRequests);
+		System.out.println("Aver. time per request (ms):\t"+milliSeconds/(float)totalRequests);
 
 		System.out.println("==========================================================\n");
 
